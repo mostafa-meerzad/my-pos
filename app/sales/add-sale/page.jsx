@@ -3,12 +3,12 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { Plus, Trash2, Edit, Save } from "lucide-react";
-
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import Link from "next/link";
 import {
   Table,
   TableBody,
@@ -37,7 +37,6 @@ export default function AddSalePage() {
   // local states
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
-
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerSuggestionsVisible, setCustomerSuggestionsVisible] =
     useState(false);
@@ -52,33 +51,29 @@ export default function AddSalePage() {
   const [itemDiscount, setItemDiscount] = useState(0);
   const [customer, setCustomer] = useState(null);
 
-  // NEW: payment method + tax
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [taxAmount, setTaxAmount] = useState(0);
 
-  // editing
   const [editingId, setEditingId] = useState(null);
   const [editValues, setEditValues] = useState(null);
 
-  // invoice
+  // invoice + print
   const invoiceRef = useRef(null);
   const barcodeRef = useRef(null);
   const handlePrint = useReactToPrint({ contentRef: invoiceRef });
 
-  // loading state for finalizing
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [lastPrintedSale, setLastPrintedSale] = useState(null);
 
   const router = useRouter();
 
-  // 🔹 fetch customers
+  // fetch customers
   useEffect(() => {
     async function fetchCustomers() {
       try {
         const res = await fetch("/api/customer/");
         const data = await res.json();
-        if (data.success) {
-          setCustomers(data.data);
-        }
+        if (data.success) setCustomers(data.data);
       } catch (err) {
         console.error("Failed to fetch customers", err);
       }
@@ -86,22 +81,18 @@ export default function AddSalePage() {
     fetchCustomers();
   }, []);
 
-  //for barcode focus on page load
+  // focus barcode input
   useEffect(() => {
-  if (barcodeRef.current) {
-    barcodeRef.current.focus();
-  }
-}, []);
+    if (barcodeRef.current) barcodeRef.current.focus();
+  }, []);
 
-  // 🔹 fetch products
+  // fetch products
   useEffect(() => {
     async function fetchProducts() {
       try {
         const res = await fetch("/api/products/");
         const data = await res.json();
-        if (data.success) {
-          setProducts(data.data);
-        }
+        if (data.success) setProducts(data.data);
       } catch (err) {
         console.error("Failed to fetch products", err);
       }
@@ -143,14 +134,10 @@ export default function AddSalePage() {
   }
 
   function onAdd() {
-    if (!selectedProduct) {
-      alert("Select product or scan barcode");
-      return;
-    }
-    if (!quantity || quantity <= 0) {
-      alert("Quantity must be at least 1");
-      return;
-    }
+    if (!selectedProduct) return alert("Select product or scan barcode");
+    if (!quantity || quantity <= 0)
+      return alert("Quantity must be at least 1");
+
     const unitPrice = Number(selectedProduct.price || 0);
     const discount = Number(itemDiscount || 0);
     const subtotal = +(unitPrice * quantity - discount);
@@ -167,7 +154,6 @@ export default function AddSalePage() {
     };
 
     addItem(item);
-    // reset
     setProductQuery("");
     setSelectedProduct(null);
     setBarcodeInput("");
@@ -204,21 +190,22 @@ export default function AddSalePage() {
     const discount = items.reduce((s, it) => s + Number(it.discount || 0), 0);
     const tax = 0;
     const final = +(subtotal - discount + tax).toFixed(2);
-    return {
-      subtotal: +subtotal.toFixed(2),
-      discount: +discount.toFixed(2),
-      final,
-    };
+    return { subtotal: +subtotal.toFixed(2), discount: +discount.toFixed(2), final };
   }, [items]);
 
-  // submit to server
+  // common helper to handle invoice print
+  function triggerInvoicePrint(saleData) {
+    setLastPrintedSale(saleData);
+    setTimeout(() => handlePrint(), 300);
+  }
+
+  // finalize sale (no delivery)
   async function handleFinalizeSale() {
     if (items.length === 0) return alert("No items to finalize");
     if (isSubmitting) return;
 
-    // prepare payload in the shape your API expects
     const payload = {
-      customerId: customer?.id ?? null, // null -> backend will create/get Walk-in
+      customerId: customer?.id ?? null,
       paymentMethod: paymentMethod || "cash",
       taxAmount: Number(taxAmount || 0),
       items: items.map((it) => ({
@@ -235,120 +222,124 @@ export default function AddSalePage() {
     try {
       const res = await fetch("/api/sale", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        // show server error (either validation, business rule or generic)
-        const message =
-          (data && data.error) ||
-          (data && data.errors) ||
-          "Failed to create sale. See console for details.";
-        console.error("Sale error:", data);
-        alert(typeof message === "string" ? message : JSON.stringify(message));
+        alert(data?.error || "Failed to create sale");
         return;
       }
 
-      // success — server returns created sale in data.data
-      // push to local finalizedSales for history
       const serverSale = data.data || {};
-      const localSale = {
-        id: serverSale.id ?? Date.now(),
+      const finalized = {
+        saleId: serverSale.id,
+        date: serverSale.createdAt || new Date().toISOString(),
         customer: customer ?? { id: 0, name: "Walk in" },
-        items: items,
+        items: [...items],
+        totals: { ...totals },
+      };
+
+      triggerInvoicePrint(finalized);
+
+      const localSale = {
+        id: finalized.saleId ?? Date.now(),
+        customer: finalized.customer,
+        items: finalized.items,
         total: payload.totalAmount,
-        date: new Date().toISOString(),
+        date: finalized.date,
         serverSale,
       };
       addFinalizedSale(localSale);
 
-      // clear UI
-      clear();
-      setCustomer(null);
-      setCustomerQuery("");
-      setPaymentMethod("cash");
-      setTaxAmount(0);
-
-      alert("Sale finalized and saved successfully!");
+      setTimeout(() => {
+        clear();
+        setCustomer(null);
+        setCustomerQuery("");
+        setPaymentMethod("cash");
+        setTaxAmount(0);
+        alert("Sale finalized and saved successfully!");
+      }, 800);
     } catch (err) {
-      console.error("Failed to finalize sale:", err);
-      alert("Network or unexpected error. Check console.");
+      console.error("Finalize sale error:", err);
+      alert("Network or unexpected error");
     } finally {
       setIsSubmitting(false);
     }
   }
-  // submit to server and go to delivery component
+
+  // finalize sale + delivery
   async function handleFinalizeSaleWithDelivery() {
-  if (items.length === 0) return alert("No items to finalize");
-  if (isSubmitting) return;
+    if (items.length === 0) return alert("No items to finalize");
+    if (isSubmitting) return;
 
-  const payload = {
-    customerId: customer?.id ?? null,
-    paymentMethod: paymentMethod || "cash",
-    taxAmount: Number(taxAmount || 0),
-    items: items.map((it) => ({
-      productId: it.productId,
-      quantity: Number(it.quantity),
-      unitPrice: Number(it.unitPrice),
-      discount: Number(it.discount || 0),
-      subtotal: Number(it.subtotal),
-    })),
-    totalAmount: Number((totals.final + Number(taxAmount || 0)).toFixed(2)),
-  };
+    const payload = {
+      customerId: customer?.id ?? null,
+      paymentMethod: paymentMethod || "cash",
+      taxAmount: Number(taxAmount || 0),
+      items: items.map((it) => ({
+        productId: it.productId,
+        quantity: Number(it.quantity),
+        unitPrice: Number(it.unitPrice),
+        discount: Number(it.discount || 0),
+        subtotal: Number(it.subtotal),
+      })),
+      totalAmount: Number((totals.final + Number(taxAmount || 0)).toFixed(2)),
+    };
 
-  setIsSubmitting(true);
-  try {
-    const res = await fetch("/api/sale", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    setIsSubmitting(true);
+    try {
+      const res = await fetch("/api/sale", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
 
-    const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data?.error || "Failed to create sale");
+        return;
+      }
 
-    if (!res.ok || !data.success) {
-      console.error("Sale error:", data);
-      alert(data?.error || "Failed to create sale");
-      return;
-    }
-
-    // success — server returns created sale in data.data
-      // push to local finalizedSales for history
       const serverSale = data.data || {};
-      const localSale = {
-        id: serverSale.id ?? Date.now(),
+      const finalized = {
+        saleId: serverSale.id,
+        date: serverSale.createdAt || new Date().toISOString(),
         customer: customer ?? { id: 0, name: "Walk in" },
-        items: items,
+        items: [...items],
+        totals: { ...totals },
+      };
+
+      triggerInvoicePrint(finalized);
+
+      const localSale = {
+        id: finalized.saleId ?? Date.now(),
+        customer: finalized.customer,
+        items: finalized.items,
         total: payload.totalAmount,
-        date: new Date().toISOString(),
+        date: finalized.date,
         serverSale,
       };
       addFinalizedSale(localSale);
 
-      // clear UI
-      clear();
-      setCustomer(null);
-      setCustomerQuery("");
-      setPaymentMethod("cash");
-      setTaxAmount(0);
-
-    // ✅ redirect to delivery with sale + customer prefilled
-    router.push(
-      `/delivery/add?saleId=${serverSale.id}&customerId=${serverSale.customerId}`
-    );
-  } catch (err) {
-    console.error("Finalize sale + delivery error:", err);
-    alert("Network or unexpected error");
-  } finally {
-    setIsSubmitting(false);
+      setTimeout(() => {
+        clear();
+        setCustomer(null);
+        setCustomerQuery("");
+        setPaymentMethod("cash");
+        setTaxAmount(0);
+        router.push(
+          `/delivery/add?saleId=${serverSale.id}&customerId=${serverSale.customerId}`
+        );
+      }, 800);
+    } catch (err) {
+      console.error("Finalize sale + delivery error:", err);
+      alert("Network or unexpected error");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
-}
-
 
   return (
     <div className="p-6 space-y-6">
@@ -358,6 +349,9 @@ export default function AddSalePage() {
           <Image src={salesImage} width={80} height={80} alt="sales" />
           New Sale
         </h1>
+        <Link href="/sales">
+          <Button variant="outline">Back to Sales</Button>
+        </Link>
 
         <div className="flex gap-2">
           <Button
@@ -366,7 +360,7 @@ export default function AddSalePage() {
               if (confirm("Clear cart?")) clear();
             }}
           >
-            Clear
+            Clear Cart
           </Button>
           <Button
             onClick={handleFinalizeSale}
@@ -386,6 +380,9 @@ export default function AddSalePage() {
           <Button onClick={handlePrint} className="bg-blue-500 text-md">
             Print Invoice
           </Button>
+          <Link href="/sales">
+            <Button variant="outline">Back to Sales</Button>
+          </Link>
         </div>
       </div>
 
@@ -434,7 +431,7 @@ export default function AddSalePage() {
             {/* Product */}
             <h3 className="text-lg font-semibold mb-3 mt-5">Add product</h3>
             <Input
-             ref={barcodeRef}
+              ref={barcodeRef}
               placeholder="Scan barcode"
               value={barcodeInput}
               onChange={(e) => setBarcodeInput(e.target.value)}
@@ -471,7 +468,7 @@ export default function AddSalePage() {
                     >
                       <div className="font-medium">{p.name}</div>
                       <div className="text-xs text-gray-500">
-                        {p.barcode} • ${p.price}
+                        {p.barcode} • AFN {p.price}
                       </div>
                     </div>
                   ))}
@@ -503,7 +500,7 @@ export default function AddSalePage() {
 
             {selectedProduct && (
               <div className="mt-3 text-sm text-gray-600">
-                Selected: <strong>{selectedProduct.name}</strong> • $
+                Selected: <strong>{selectedProduct.name}</strong> • AFN
                 {selectedProduct.price}
               </div>
             )}
@@ -634,7 +631,7 @@ export default function AddSalePage() {
                               }
                             />
                           ) : (
-                            "$" + Number(row.unitPrice).toFixed(2)
+                            "AFN " + Number(row.unitPrice).toFixed(2)
                           )}
                         </TableCell>
                         <TableCell className="w-28">
@@ -671,18 +668,18 @@ export default function AddSalePage() {
                               }
                             />
                           ) : (
-                            "$" + Number(row.discount || 0).toFixed(2)
+                            "AFN " + Number(row.discount || 0).toFixed(2)
                           )}
                         </TableCell>
                         <TableCell>
                           {editingId === row.tempId
-                            ? "$" +
+                            ? "AFN " +
                               (
                                 Number(editValues?.unitPrice || 0) *
                                   Number(editValues?.quantity || 0) -
                                 Number(editValues?.discount || 0)
                               ).toFixed(2)
-                            : "$" + Number(row.subtotal).toFixed(2)}
+                            : "AFN " + Number(row.subtotal).toFixed(2)}
                         </TableCell>
                         <TableCell className="w-36">
                           {editingId === row.tempId ? (
@@ -725,16 +722,17 @@ export default function AddSalePage() {
               <div className="mt-4 flex justify-end gap-4">
                 <div className="bg-slate-50 p-3 rounded border text-right">
                   <div className="text-sm text-gray-600">
-                    Subtotal: ${totals.subtotal.toFixed(2)}
+                    Subtotal: AFN {totals.subtotal.toFixed(2)}
                   </div>
                   <div className="text-sm text-gray-600">
-                    Discounts: -${totals.discount.toFixed(2)}
+                    Discounts: -AFN {totals.discount.toFixed(2)}
                   </div>
                   <div className="text-sm text-gray-600">
-                    Tax: ${Number(taxAmount || 0).toFixed(2)}
+                    Tax: AFN {Number(taxAmount || 0).toFixed(2)}
                   </div>
                   <div className="text-xl font-semibold mt-1">
-                    Total: ${(totals.final + Number(taxAmount || 0)).toFixed(2)}
+                    Total: AFN{" "}
+                    {(totals.final + Number(taxAmount || 0)).toFixed(2)}
                   </div>
                 </div>
               </div>
@@ -743,14 +741,18 @@ export default function AddSalePage() {
         </div>
       </div>
 
-      {/* invoice:  */}
+      {/* hidden invoice */}
       <div className="hidden">
-        <Invoice
-          ref={invoiceRef}
-          items={items}
-          customer={customer}
-          totals={totals}
-        />
+        {lastPrintedSale && (
+          <Invoice
+            ref={invoiceRef}
+            items={lastPrintedSale.items}
+            customer={lastPrintedSale.customer}
+            totals={lastPrintedSale.totals}
+            saleId={lastPrintedSale.saleId}
+            date={lastPrintedSale.date}
+          />
+        )}
       </div>
     </div>
   );

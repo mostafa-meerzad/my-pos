@@ -35,10 +35,12 @@ export const authOptions = {
       },
     }),
   ],
+
   session: {
     strategy: "jwt",
-    maxAge: 5 * 60,
+    maxAge: 5 * 60, // 5 minutes
   },
+
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
@@ -48,6 +50,7 @@ export const authOptions = {
       }
       return token;
     },
+
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id;
@@ -56,7 +59,20 @@ export const authOptions = {
       }
       return session;
     },
+
+    // ✅ Add this redirect callback below
+    redirect({ url, baseUrl }) {
+      // Always go home after login
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      try {
+        const u = new URL(url);
+        if (u.origin === baseUrl) return u.href;
+      } catch (err) {}
+      return baseUrl; // fallback to homepage
+    },
   },
+
+  // Optional: you can enable this to use your custom sign-in page
   // pages: {
   //   signIn: "/auth/signin",
   // },

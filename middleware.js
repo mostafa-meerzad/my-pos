@@ -92,3 +92,16 @@
 //     "/((?!_next/static|_next/image|_next|favicon.ico|robots.txt|sitemap.xml|public).*)",
 //   ],
 // };
+
+import { NextResponse } from "next/server";
+
+export function middleware(req) {
+  return NextResponse.next();
+}
+
+// This matcher applies the middleware to all routes except static assets
+export const config = {
+  matcher: [
+    "/((?!_next/static|_next/image|_next|favicon.ico|robots.txt|sitemap.xml|public).*)",
+  ],
+};

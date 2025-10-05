@@ -92,16 +92,116 @@
 //     "/((?!_next/static|_next/image|_next|favicon.ico|robots.txt|sitemap.xml|public).*)",
 //   ],
 // };
+// -----------------------------------------------------------------------------------
+// import { NextResponse } from "next/server";
 
+// export function middleware(req) {
+//   return NextResponse.next();
+// }
+
+// // This matcher applies the middleware to all routes except static assets
+// export const config = {
+//   matcher: [
+//     "/((?!_next/static|_next/image|_next|favicon.ico|robots.txt|sitemap.xml|public).*)",
+//   ],
+// };
+
+// -----------------------------------------------------------------------------------
+
+// middleware.js
 import { NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
+import { canAccess } from "./lib/permissions";
 
-export function middleware(req) {
+const signInPage = "/auth/signin";
+const accessDeniedPage = "/access-denied";
+
+/**
+ * Define your route permissions.
+ * action → permission key for role-based control
+ * allow → public routes that don't need authentication
+ */
+const routePermissions = [
+  // --- Public routes
+  { match: /^\/api\/auth(\/.*)?$/i, allow: true },
+  { match: /^\/auth(\/.*)?$/i, allow: true },
+  { match: /^\/access-denied(\/.*)?$/i, allow: true },
+
+  // --- API routes
+  { match: /^\/api\/users(\/.*)?$/i, action: "users.manage" },
+  { match: /^\/api\/products(\/.*)?$/i, action: "products.manage" },
+  { match: /^\/api\/category(\/.*)?$/i, action: "categories.manage" },
+  { match: /^\/api\/customers(\/.*)?$/i, action: "customers.manage" },
+  { match: /^\/api\/deliveries(\/.*)?$/i, action: "deliveries.manage" },
+  { match: /^\/api\/drivers(\/.*)?$/i, action: "drivers.manage" },
+  { match: /^\/api\/invoices?(\/.*)?$/i, action: "invoices.manage" },
+  { match: /^\/api\/reports(\/.*)?$/i, action: "reports.view" },
+  { match: /^\/api\/sales(\/.*)?$/i, action: "sales.view" },
+  { match: /^\/api\/sales\/refund(\/.*)?$/i, action: "sales.refund" },
+  { match: /^\/api\/sales\/report(\/.*)?$/i, action: "sales.report" },
+  { match: /^\/api\/suppliers(\/.*)?$/i, action: "suppliers.manage" },
+
+  // --- Page routes
+  { match: /^\/customers(\/.*)?$/i, action: "customers.view" },
+  { match: /^\/delivery(\/.*)?$/i, action: "deliveries.view" },
+  { match: /^\/inventory(\/.*)?$/i, action: "inventory.view" },
+  { match: /^\/products(\/.*)?$/i, action: "products.view" },
+  { match: /^\/reports(\/.*)?$/i, action: "reports.view" },
+  { match: /^\/sales(\/.*)?$/i, action: "sales.view" },
+  { match: /^\/settings(\/.*)?$/i, action: "settings.manage" },
+];
+
+/**
+ * Middleware entry point
+ */
+export async function middleware(req) {
+  const { pathname } = req.nextUrl;
+
+  // 1️⃣ Allow static and public routes
+  const rule = routePermissions.find((r) => r.match.test(pathname));
+  if (rule?.allow) return NextResponse.next();
+
+  // 2️⃣ Read user token (Credentials Provider uses JWT strategy)
+  const token = await getToken({
+    req,
+    secret: process.env.NEXTAUTH_SECRET,
+    secureCookie: process.env.NODE_ENV === "production",
+  });
+
+  // 3️⃣ If not logged in → redirect to sign-in
+  if (!token) {
+    if (pathname.startsWith("/api")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const signInUrl = new URL(signInPage, req.url);
+    signInUrl.searchParams.set("callbackUrl", req.url);
+    return NextResponse.redirect(signInUrl);
+  }
+
+  // 4️⃣ If route requires specific permission → check role
+  if (rule?.action) {
+    const userRole = token.role;
+    const hasPermission = canAccess(userRole, rule.action);
+
+    if (!hasPermission) {
+      if (pathname.startsWith("/api")) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      const deniedUrl = new URL(accessDeniedPage, req.url);
+      return NextResponse.rewrite(deniedUrl);
+    }
+  }
+
+  // 5️⃣ Otherwise allow access
   return NextResponse.next();
 }
 
-// This matcher applies the middleware to all routes except static assets
+/**
+ * Match all routes except Next.js internals & static assets
+ */
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|_next|favicon.ico|robots.txt|sitemap.xml|public).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|manifest.json|.*\\.(png|jpg|jpeg|svg|ico)$).*)",
   ],
 };

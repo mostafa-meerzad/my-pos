@@ -57,22 +57,22 @@ export const authOptions = {
       return session;
     },
   },
-  pages: {
-    signIn: "/auth/signin",
-  },
-
-  // cookies: {
-  //   sessionToken: {
-  //     name: `next-auth.session-token`,
-  //     options: {
-  //       httpOnly: true,
-  //       sameSite: "lax",
-  //       path: "/",
-  //       secure: process.env.NODE_ENV === "production",
-  //       maxAge: 5 * 60,
-  //     },
-  //   },
+  // pages: {
+  //   signIn: "/auth/signin",
   // },
+
+  cookies: {
+    sessionToken: {
+      name: `next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 5 * 60,
+      },
+    },
+  },
 };
 
 const handler = NextAuth(authOptions);

@@ -35,7 +35,7 @@ const routePermissions = [
   { match: /^\/settings(\/.*)?$/i, action: "settings.manage" },
 ];
 
-const signInPage = "/api/auth/signin";
+const signInPage = "/auth/signin";
 const accessDeniedPage = "/access-denied";
 
 export async function middleware(req) {

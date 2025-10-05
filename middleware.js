@@ -35,7 +35,7 @@ const routePermissions = [
   { match: /^\/settings(\/.*)?$/i, action: "settings.manage" },
 ];
 
-const signInPage = "/api/auth/signin";
+const signInPage = "/auth/signin";
 const accessDeniedPage = "/access-denied";
 
 export async function middleware(req) {
@@ -52,10 +52,16 @@ export async function middleware(req) {
 
   // --- 2. Then, check for authentication
   if (!token) {
+    // Allow access to the signin page itself to prevent redirect loop
+    if (pathname === signInPage) {
+      return NextResponse.next();
+    }
+
     // For API routes, return JSON error
     if (pathname.startsWith("/api")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
     // For page routes, redirect to sign-in
     const url = new URL(signInPage, req.url);
     url.searchParams.set("callbackUrl", req.url); // Preserve the intended destination

@@ -34,7 +34,7 @@ const routePermissions = [
   { match: /^\/products(\/.*)?$/i, action: "products.view" },
   { match: /^\/reports(\/.*)?$/i, action: "reports.view" },
   { match: /^\/sales(\/.*)?$/i, action: "sales.view" },
-  { match: /^\/drivers(\/.*)?$/i, action: "drivers.view" },
+  // { match: /^\/drivers(\/.*)?$/i, action: "drivers.view" },
   { match: /^\/settings(\/.*)?$/i, action: "settings.manage" },
 ];
 

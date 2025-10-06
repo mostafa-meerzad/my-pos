@@ -81,13 +81,17 @@ This seeds the database and creates a default admin account:
 
 # Authentication Setup
 
-1. Install **NextAuth** and dependencies (if not already installed):
+This app uses a simple credentials-based authentication (username + password) with a session cookie that lasts until the browser is closed.
 
-```bash
-npm install next-auth
+- Session is stored in an HTTP-only session cookie (no persistent Max-Age). Closing the browser logs the user out.
+- Role-based access controls are enforced via middleware.
+
+Environment variable:
+
+```env
+# Used to sign JWT session tokens
+NEXTAUTH_SECRET=super-long-random-secret
 ```
-
-2. After setup, you can log in to receive an **auth token** for protected routes.
 
 ---
 
@@ -96,7 +100,7 @@ npm install next-auth
 Go to:
 
 ```
-http://localhost:3000/api/auth/signin
+http://localhost:3000/login
 ```
 
 Enter the default credentials:
@@ -108,13 +112,13 @@ Enter the default credentials:
 
 ## Signing Out
 
-Visit:
+To sign out, call the API:
 
 ```
-http://localhost:3000/api/auth/signout
+POST http://localhost:3000/api/logout
 ```
 
-Click the **Sign Out** button.
+Or invoke it from the UI if a Sign Out button is present. Closing the browser will also sign you out automatically.
 
 ---
 

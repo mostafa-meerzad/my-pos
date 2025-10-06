@@ -22,6 +22,7 @@ const userSchema = z.object({
     Object.values(ROLES),
     `Role is required. Allowed: ${Object.values(ROLES).join(", ")}`
   ),
+  roleId: z.number(),
 
   status: z
     .enum(

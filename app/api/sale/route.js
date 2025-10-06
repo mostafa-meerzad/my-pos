@@ -3,15 +3,14 @@ import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { getOrCreateWalkInCustomer } from "@/app/services/functions/customerService";
-import { getServerSession } from "next-auth";
-import { authOptions } from "../auth/[...nextauth]/route";
+import { getAuthFromRequest } from "@/lib/auth";
 import { ApiError } from "@/lib/errors";
 import { saleSchema } from "@/app/services/saleSchema";
 
 
 export async function POST(req) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getAuthFromRequest(req);
 
     const body = await req.json();
     console.log('POST /api/sale body:', JSON.stringify(body, null, 2));
@@ -35,13 +34,13 @@ export async function POST(req) {
     } = validation.data;
 
     // Ensure session exists
-    if (!session || !session.user) {
+    if (!session || !session.id) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized: missing session' },
         { status: 401 }
       );
     }
-    const userId = session.user.id;
+    const userId = session.id;
 
     // Coerce numeric values safely
     taxAmount = Number(taxAmount ?? 0);
